@@ -1,0 +1,17 @@
+# Entorno virtual
+venv/
+
+# Archivos de Python compilados
+__pycache__/
+*.py[cod]
+
+# Datos y fragmentos de audio
+chunks/
+
+# Salidas
+*.txt
+mi_transcripcion.txt
+transcripcion.txt
+
+# MacOS
+.DS_Store
