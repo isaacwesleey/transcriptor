@@ -16,7 +16,7 @@ Salida única: toda la transcripción se guarda en un solo fichero de texto.
 
 macOS, Linux o Windows.
 
-Python 3.8+.
+Python 3.9+.
 
 Entorno virtual de Python (venv).
 
