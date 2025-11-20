@@ -1,107 +1,351 @@
-Transcriptor de Audio con Whisper y Pydub
+# Transcriptor de Audio con Whisper
 
-Este proyecto permite dividir un archivo de audio en fragmentos de 5 minutos y transcribir cada uno usando el modelo whisper-1 de OpenAI. Está diseñado para ejecutarse en macOS dentro de un entorno virtual de Python.
+Herramienta de línea de comandos para transcribir archivos de audio largos usando el modelo Whisper-1 de OpenAI. El script divide automáticamente el audio en fragmentos manejables y procesa cada uno de forma secuencial.
 
-📋 Características
+## Características
 
-División automática: parte el audio original en trozos de duración configurable.
+- **División automática**: Fragmenta el audio original en trozos de duración configurable (por defecto 5 minutos)
+- **Transcripción con Whisper-1**: Usa el modelo de OpenAI para transcripciones de alta calidad
+- **Soporte multi-formato**: Compatible con `.m4a`, `.mp3`, `.wav` y otros formatos de audio
+- **Procesamiento sin pérdida**: Utiliza FFmpeg con `copy codec` para dividir sin recodificar
+- **Salida consolidada**: Todas las transcripciones se guardan en un único archivo de texto
+- **Sistema de caché**: Evita re-transcribir fragmentos ya procesados (ahorro de tiempo y costos)
+- **Reintentos automáticos**: Manejo inteligente de errores de red y rate limiting
+- **Validación robusta**: Verifica archivos antes de procesar para evitar errores
+- **Logging completo**: Sistema de logs para debugging y auditoría
+- **Manejo de interrupciones**: Guarda progreso si el proceso se interrumpe
 
-Transcripción en bucle: procesa cada fragmento secuencialmente y concatena los resultados.
+## Requisitos
 
-Soporte para M4A y otros formatos (.m4a, .mp3, .wav, etc.) gracias a FFmpeg.
+### Sistema
+- macOS, Linux o Windows
+- Python 3.8 o superior
+- FFmpeg instalado y accesible en PATH
 
-Salida única: toda la transcripción se guarda en un solo fichero de texto.
+### Dependencias Python
+- `openai` - Cliente oficial de OpenAI
+- `tenacity` - Reintentos automáticos con backoff exponencial
+- `python-dotenv` - Gestión de variables de entorno
+- FFmpeg (herramienta de sistema, no paquete Python)
 
-🛠️ Requisitos
+### API
+- Clave de API de OpenAI con acceso al modelo Whisper-1
 
-macOS, Linux o Windows.
+## Instalación
 
-Python 3.8+.
+### 1. Clonar el repositorio
 
-Entorno virtual de Python (venv).
+```bash
+git clone <url-del-repositorio>
+cd Transcriptor
+```
 
-FFmpeg instalado y accesible en el PATH.
+### 2. Crear entorno virtual
 
-Clave de API de OpenAI con permisos para Whisper.
-
-⚙️ Instalación
-
-Clona o descarga este repositorio.
-
-En la raíz del proyecto, crea y activa un entorno virtual:
-
+```bash
 python3 -m venv venv
 source venv/bin/activate        # macOS/Linux
-.\venv\Scripts\Activate.ps1   # Windows PowerShell
+.\venv\Scripts\Activate.ps1     # Windows PowerShell
+```
 
-Actualiza pip (opcional):
+### 3. Instalar dependencias
 
+```bash
 pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-Instala las dependencias:
+Para desarrollo (opcional):
+```bash
+pip install -r requirements-dev.txt
+```
 
-pip install pydub openai
+### 4. Instalar FFmpeg
 
-Instala FFmpeg si no lo tienes:
-
-macOS (Homebrew):
-
+**macOS (Homebrew):**
+```bash
 brew install ffmpeg
+```
 
-Ubuntu/Debian:
-
+**Ubuntu/Debian:**
+```bash
 sudo apt-get update
 sudo apt-get install ffmpeg
+```
 
-Windows: descarga desde ffmpeg.org y añade al PATH.
+**Windows:**
+- Descarga desde [ffmpeg.org](https://ffmpeg.org/download.html)
+- Añade el directorio `bin` al PATH del sistema
 
-🔑 Configuración
+### 5. Verificar instalación de FFmpeg
 
-Exporta tu clave de API de OpenAI en el entorno:
+```bash
+ffmpeg -version
+```
 
-export OPENAI_API_KEY="tu_clave_aquí"       # macOS/Linux
-$Env:OPENAI_API_KEY="tu_clave_aquí"         # Windows PowerShell
+## Configuración
 
-🚀 Uso
+### Método 1: Archivo .env (Recomendado)
 
-Ejecuta el script principal con los parámetros deseados:
+Crea un archivo `.env` en la raíz del proyecto basándote en `.env.example`:
 
-python split_and_transcribe.py <archivo_audio> \
-  --minutes 5    \
-  --outdir chunks \
-  --output transcripcion.txt
+```bash
+cp .env.example .env
+```
 
-<archivo_audio>: ruta al archivo de audio (ej. consultoria.m4a).
+Edita el archivo `.env` y configura tu API key:
 
---minutes: duración en minutos de cada fragmento (por defecto 5).
+```bash
+# .env
+OPENAI_API_KEY=sk-proj-tu-clave-aquí
 
---outdir: carpeta donde se guardan los fragmentos generados.
+# Configuración opcional
+CACHE_ENABLED=true
+CACHE_DIR=.cache/transcriptions
+LOG_LEVEL=INFO
+LOG_FILE=transcriptor.log
+DEFAULT_CHUNK_MINUTES=5
+MAX_RETRY_ATTEMPTS=5
+```
 
---output: archivo de salida con la transcripción completa.
+### Método 2: Variables de entorno
 
-Ejemplo completo:
+**macOS/Linux:**
+```bash
+export OPENAI_API_KEY="tu_clave_aquí"
+```
 
-python split_and_transcribe.py consultoria.m4a --minutes 5 --outdir trozos --output mi_transcripcion.txt
+**Windows PowerShell:**
+```powershell
+$Env:OPENAI_API_KEY="tu_clave_aquí"
+```
 
-Al finalizar, tendrás:
+**Forma permanente:**
 
-Carpeta trozos/ con los fragmentos de audio (consultoria_00.mp3, consultoria_01.mp3, ...).
+```bash
+# ~/.bashrc o ~/.zshrc
+echo 'export OPENAI_API_KEY="tu_clave_aquí"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-Archivo mi_transcripcion.txt con las transcripciones de cada fragmento.
+## Uso
 
-🔧 Personalización
+### Sintaxis básica
 
-Formato de salida: puedes generar subtítulos añadiendo response_format="srt" o "vtt" al método de transcripción.
+```bash
+python split_and_transcribe.py <archivo_audio> [opciones]
+```
 
-Duración de fragmentos: ajusta --minutes al valor que necesites.
+### Parámetros
 
-Procesamiento masivo: integra el script en un pipeline o añade paralelización para grandes volúmenes de audio.
+| Parámetro | Descripción | Por defecto |
+|-----------|-------------|-------------|
+| `audio_path` | Ruta al archivo de audio (obligatorio) | - |
+| `--minutes, -m` | Duración de cada fragmento en minutos | `5` |
+| `--outdir, -d` | Directorio para guardar fragmentos | `chunks` |
+| `--output, -o` | Archivo de salida de transcripción | `transcripcion.txt` |
+| `--no-cache` | Desactivar el uso de caché | Caché activado |
+| `--keep-chunks` | Conservar fragmentos después de transcribir | Eliminar fragmentos |
 
-🤝 Contribuciones
+### Ejemplos
 
-¡Las contribuciones son bienvenidas! Abre un issue o un pull request para sugerir mejoras o reportar errores.
+**Uso básico:**
+```bash
+python split_and_transcribe.py mi_audio.m4a
+```
 
-📄 Licencia
+**Con fragmentos de 10 minutos:**
+```bash
+python split_and_transcribe.py mi_audio.m4a --minutes 10
+```
 
-Este proyecto está bajo la Licencia MIT. Consulta LICENSE para más detalles.
+**Especificando todos los parámetros:**
+```bash
+python split_and_transcribe.py consultoria.m4a \
+  --minutes 5 \
+  --outdir fragmentos \
+  --output transcripcion_completa.txt
+```
+
+**Con caché desactivado:**
+```bash
+python split_and_transcribe.py mi_audio.m4a --no-cache
+```
+
+**Conservar fragmentos:**
+```bash
+python split_and_transcribe.py mi_audio.m4a --keep-chunks
+```
+
+**Ayuda del comando:**
+```bash
+python split_and_transcribe.py --help
+```
+
+## Estructura de salida
+
+Después de ejecutar el script, obtendrás:
+
+```text
+Transcriptor/
+├── .cache/                    # Caché de transcripciones (opcional)
+│   └── transcriptions/
+│       ├── abc123...json
+│       └── def456...json
+├── chunks/                    # Fragmentos (si usas --keep-chunks)
+│   ├── mi_audio_000.m4a
+│   ├── mi_audio_001.m4a
+│   └── mi_audio_002.m4a
+├── transcripcion.txt          # Transcripción completa
+├── transcriptor.log           # Archivo de logs
+└── split_and_transcribe.py
+```
+
+### Formato del archivo de transcripción
+
+```text
+======================================================================
+Fragmento 1/3: mi_audio_000.m4a
+======================================================================
+
+[Texto transcrito del primer fragmento...]
+
+======================================================================
+Fragmento 2/3: mi_audio_001.m4a
+======================================================================
+
+[Texto transcrito del segundo fragmento...]
+```
+
+### Ejemplo de salida en consola
+
+```text
+======================================================================
+🎙️  Transcriptor de Audio con Whisper-1
+======================================================================
+✓ Archivo de audio validado: producto.m4a
+
+📂 Dividiendo audio en fragmentos de 5 minutos...
+✓ Audio dividido en 6 fragmentos
+
+🎯 Transcribiendo 6 fragmentos...
+
+[1/6] 🔊 Transcribiendo producto_000.m4a...
+          ✓ Transcripción exitosa
+[2/6] 🔊 Transcribiendo producto_001.m4a...
+          ✓ Recuperado del caché
+[3/6] 🔊 Transcribiendo producto_002.m4a...
+          ✓ Transcripción exitosa
+
+======================================================================
+📊 Resumen de la transcripción
+======================================================================
+✓ Transcripciones exitosas: 4
+💾 Recuperadas del caché:    2
+
+📄 Transcripción guardada en: transcripcion.txt
+======================================================================
+```
+
+## Cómo funciona
+
+1. **Validación de entrada**: Verifica existencia, formato, tamaño y validez del archivo con `ffprobe`
+2. **Limpieza previa**: Elimina directorios y archivos de salida anteriores
+3. **Inicialización**: Configura cliente OpenAI y sistema de caché
+4. **División**: Usa FFmpeg para dividir el audio en fragmentos sin recodificar
+5. **Transcripción con caché**:
+   - Verifica si el fragmento ya está en caché
+   - Si está en caché, recupera la transcripción (instantáneo)
+   - Si no, transcribe con Whisper-1 y guarda en caché
+   - Reintentos automáticos en caso de errores de red
+6. **Consolidación**: Guarda todas las transcripciones en un archivo único
+7. **Limpieza**: Elimina fragmentos temporales (opcional con `--keep-chunks`)
+
+## Personalización
+
+### Cambiar el modelo de Whisper
+
+Edita la función `transcribe_audio()` en [split_and_transcribe.py](split_and_transcribe.py):
+
+```python
+resp = client.audio.transcriptions.create(
+    file=audio_file,
+    model="whisper-1",  # Cambiar si hay otros modelos disponibles
+    language="es"       # Especificar idioma (opcional)
+)
+```
+
+### Generar subtítulos en lugar de texto
+
+```python
+resp = client.audio.transcriptions.create(
+    file=audio_file,
+    model="whisper-1",
+    response_format="srt"  # o "vtt" para WebVTT
+)
+```
+
+### Procesar múltiples archivos
+
+```bash
+for file in *.m4a; do
+  python split_and_transcribe.py "$file" --output "${file%.m4a}.txt"
+done
+```
+
+## Solución de problemas
+
+### Error: "No se encontró OPENAI_API_KEY en el entorno"
+
+Verifica que la variable de entorno esté configurada:
+```bash
+echo $OPENAI_API_KEY  # macOS/Linux
+echo $Env:OPENAI_API_KEY  # Windows PowerShell
+```
+
+### Error: "ffmpeg: command not found"
+
+FFmpeg no está instalado o no está en el PATH. Sigue las instrucciones de instalación de FFmpeg.
+
+### Error: "Rate limit exceeded"
+
+Has excedido los límites de la API de OpenAI. Considera:
+- Aumentar el tiempo entre peticiones
+- Reducir la duración de los fragmentos
+- Verificar tu plan de OpenAI
+
+### Transcripciones con errores
+
+Si la calidad de transcripción es baja:
+- Verifica la calidad del audio original
+- Especifica el idioma en el parámetro `language`
+- Prueba con fragmentos más pequeños (2-3 minutos)
+
+## Costos
+
+La API de Whisper-1 tiene un costo de **$0.006 por minuto de audio** (aproximado, verificar precios actuales en [OpenAI Pricing](https://openai.com/pricing)).
+
+**Ejemplo de cálculo:**
+- Audio de 60 minutos = $0.36 USD
+- Audio de 120 minutos = $0.72 USD
+
+## Contribuciones
+
+Las contribuciones son bienvenidas. Para contribuir:
+
+1. Fork el proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit tus cambios (`git commit -m 'Añade nueva funcionalidad'`)
+4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
+5. Abre un Pull Request
+
+## Licencia
+
+Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+
+## Recursos adicionales
+
+- [Documentación de OpenAI Whisper](https://platform.openai.com/docs/guides/speech-to-text)
+- [Documentación de FFmpeg](https://ffmpeg.org/documentation.html)
+- [API Reference de OpenAI](https://platform.openai.com/docs/api-reference)
 

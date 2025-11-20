@@ -1,0 +1,11 @@
+# Transcriptor - Dependencias principales
+# Instalación: pip install -r requirements.txt
+
+# OpenAI API para Whisper
+openai>=1.93.0
+
+# Retry logic con backoff exponencial
+tenacity>=8.2.3
+
+# Gestión de variables de entorno
+python-dotenv>=1.0.0
