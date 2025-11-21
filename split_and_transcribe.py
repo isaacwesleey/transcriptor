@@ -219,6 +219,69 @@ def transcribe_audio(client: OpenAI, file_path: str) -> str:
         logger.error(f"Error al transcribir {file_path}: {type(e).__name__} - {e}")
         raise
 
+def generate_summary(client: OpenAI, transcription: str, model: str = "gpt-4o-mini") -> dict:
+    """
+    Genera un resumen estructurado de la transcripción usando un modelo de lenguaje.
+
+    Args:
+        client: Cliente de OpenAI
+        transcription: Texto completo de la transcripción
+        model: Modelo a usar (gpt-4o-mini, gpt-4, gpt-4o, etc.)
+
+    Returns:
+        dict con secciones del resumen
+    """
+    logger.info(f"Generando resumen con modelo {model}...")
+
+    prompt = f"""Eres un asistente experto en análisis de contenido. Analiza la siguiente transcripción y genera un resumen estructurado y completo.
+
+TRANSCRIPCIÓN:
+{transcription}
+
+Por favor, genera un resumen estructurado con las siguientes secciones:
+
+1. RESUMEN EJECUTIVO (2-3 párrafos que capturen la esencia completa)
+2. PUNTOS CLAVE (5-10 bullet points con los aspectos más importantes)
+3. TEMAS PRINCIPALES (lista de temas discutidos con breve descripción)
+4. ACCIONES Y DECISIONES (si hay acciones a tomar, decisiones tomadas, o próximos pasos)
+5. CONCLUSIONES (síntesis final y reflexiones importantes)
+
+Formatea tu respuesta de manera clara y estructurada, usando markdown."""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Eres un experto analista que crea resúmenes estructurados, claros y completos de transcripciones de audio."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.3,  # Más determinístico para resúmenes
+            max_tokens=2000   # Suficiente para un resumen extenso
+        )
+
+        summary_text = response.choices[0].message.content
+
+        # Información de uso
+        usage = response.usage
+        logger.info(f"Resumen generado - Tokens usados: {usage.total_tokens} "
+                   f"(prompt: {usage.prompt_tokens}, respuesta: {usage.completion_tokens})")
+
+        return {
+            "summary": summary_text,
+            "model": model,
+            "tokens_used": usage.total_tokens
+        }
+
+    except Exception as e:
+        logger.error(f"Error al generar resumen: {type(e).__name__} - {e}")
+        raise
+
 def main():
     print("=" * 70)
     print("🎙️  Transcriptor de Audio con Whisper-1")
@@ -260,6 +323,16 @@ def main():
         "--keep-chunks",
         action="store_true",
         help="No eliminar los fragmentos de audio después de transcribir"
+    )
+    parser.add_argument(
+        "--summary", "-s",
+        action="store_true",
+        help="Generar resumen automático de la transcripción"
+    )
+    parser.add_argument(
+        "--summary-model",
+        default=os.getenv("SUMMARY_MODEL", "gpt-4o-mini"),
+        help="Modelo a usar para el resumen (gpt-4o-mini, gpt-4, gpt-4o, etc.)"
     )
     args = parser.parse_args()
 
@@ -406,7 +479,47 @@ def main():
             logger.warning(f"No se pudieron eliminar los fragmentos: {e}")
 
     # -----------------------------
-    # 9. Resumen final
+    # 9. Generación de resumen (opcional)
+    # -----------------------------
+    summary_file = None
+    if args.summary and (successful > 0 or cached > 0):
+        print("\n" + "=" * 70)
+        print("📝 Generando resumen de la transcripción...")
+        print("=" * 70)
+
+        try:
+            # Leer la transcripción completa
+            logger.info("Leyendo transcripción para generar resumen")
+            with open(args.output, "r", encoding="utf-8") as f:
+                transcription_text = f.read()
+
+            # Generar resumen
+            summary_result = generate_summary(client, transcription_text, args.summary_model)
+
+            # Guardar resumen en archivo separado
+            summary_file = args.output.replace(".txt", "_resumen.txt")
+            with open(summary_file, "w", encoding="utf-8") as f:
+                f.write("=" * 70 + "\n")
+                f.write("📝 RESUMEN DE LA TRANSCRIPCIÓN\n")
+                f.write("=" * 70 + "\n\n")
+                f.write(f"Generado con modelo: {summary_result['model']}\n")
+                f.write(f"Tokens utilizados: {summary_result['tokens_used']}\n")
+                f.write("\n" + "=" * 70 + "\n\n")
+                f.write(summary_result['summary'])
+                f.write("\n\n" + "=" * 70 + "\n")
+
+            print("✓ Resumen generado exitosamente")
+            print(f"  Modelo usado: {summary_result['model']}")
+            print(f"  Tokens usados: {summary_result['tokens_used']}")
+            logger.info(f"Resumen guardado en: {summary_file}")
+
+        except Exception as e:
+            logger.error(f"Error al generar resumen: {e}")
+            print(f"✗ Error al generar resumen: {e}")
+            print("  La transcripción se completó correctamente, pero el resumen falló.")
+
+    # -----------------------------
+    # 10. Resumen final
     # -----------------------------
     print("\n" + "=" * 70)
     print("📊 Resumen de la transcripción")
@@ -417,6 +530,9 @@ def main():
     if failed > 0:
         print(f"✗ Transcripciones fallidas:  {failed}")
     print(f"\n📄 Transcripción guardada en: {args.output}")
+
+    if summary_file:
+        print(f"📝 Resumen guardado en:       {summary_file}")
 
     if args.keep_chunks:
         print(f"📂 Fragmentos conservados en: {args.outdir}")

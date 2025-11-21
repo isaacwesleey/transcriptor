@@ -9,3 +9,6 @@ tenacity>=8.2.3
 
 # Gestión de variables de entorno
 python-dotenv>=1.0.0
+
+# Menús interactivos en terminal
+questionary>=1.10.0
