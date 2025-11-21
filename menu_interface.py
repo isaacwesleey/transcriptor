@@ -178,6 +178,7 @@ class TranscriptorMenu:
             choices=[
                 "🎙️  Transcribir nuevo audio",
                 "📋 Ver archivos en directorio",
+                "🧹 Limpiar archivos anteriores",
                 "ℹ️  Información de uso",
                 "🚪 Salir"
             ],
@@ -285,4 +286,38 @@ Requisitos:
         questionary.press_any_key_to_continue(
             "Presiona cualquier tecla para volver al menú...",
             style=self.style
+        ).ask()
+
+    def show_cleanable_items(self, items: list) -> None:
+        """Muestra los archivos que se pueden limpiar."""
+        self.print_header("Archivos Limpiables")
+
+        if not items:
+            self.print_info("No hay archivos para limpiar.")
+            return
+
+        print("Se encontraron los siguientes archivos/directorios:\n")
+        total_size = 0
+        for item in items:
+            size_str = f"({item['size_str']})" if item['size'] > 0 else ""
+            icon = "📁" if item['type'] == 'directory' else "📄"
+            print(f"  {icon} {item['path']} {size_str}")
+            print(f"      └─ {item['description']}")
+            total_size += item['size']
+
+        if total_size > 0:
+            total_str = f"{total_size / 1024:.1f} KB" if total_size < 1024 * 1024 else f"{total_size / (1024*1024):.1f} MB"
+            print(f"\n  Total: {total_str}")
+        print()
+
+    def confirm_clean(self, items: list) -> bool:
+        """Confirma la limpieza de archivos."""
+        if not items:
+            return False
+
+        return questionary.confirm(
+            f"¿Eliminar {len(items)} archivo(s)/directorio(s)?",
+            default=False,
+            style=self.style,
+            auto_enter=False
         ).ask()

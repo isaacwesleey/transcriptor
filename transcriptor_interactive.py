@@ -285,6 +285,24 @@ def interactive_mode():
         elif action == "📋 Ver archivos en directorio":
             menu.show_audio_files_list()
 
+        elif action == "🧹 Limpiar archivos anteriores":
+            from split_and_transcribe import get_cleanable_items, clean_outputs
+
+            items = get_cleanable_items()
+            menu.show_cleanable_items(items)
+
+            if items and menu.confirm_clean(items):
+                stats = clean_outputs(verbose=True)
+                if stats['deleted_files'] > 0 or stats['deleted_dirs'] > 0:
+                    menu.print_success("Limpieza completada")
+                if stats['errors']:
+                    for error in stats['errors']:
+                        menu.print_warning(error)
+            elif items:
+                menu.print_info("Limpieza cancelada")
+
+            print()
+
         elif action == "ℹ️  Información de uso":
             menu.show_info()
 

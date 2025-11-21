@@ -156,6 +156,132 @@ def validate_audio_file(file_path: str) -> tuple[bool, str]:
 
     return True, "OK"
 
+
+def clean_outputs(
+    output_file: str = "transcripcion.txt",
+    chunks_dir: str = "chunks",
+    cache_dir: str = ".cache/transcriptions",
+    log_file: str = "transcriptor.log",
+    verbose: bool = True
+) -> dict:
+    """
+    Limpia los archivos generados por ejecuciones anteriores.
+
+    Args:
+        output_file: Archivo de transcripción principal
+        chunks_dir: Directorio de fragmentos de audio
+        cache_dir: Directorio de caché
+        log_file: Archivo de logs
+        verbose: Si True, imprime mensajes de progreso
+
+    Returns:
+        dict con estadísticas de limpieza
+    """
+    stats = {"deleted_files": 0, "deleted_dirs": 0, "errors": []}
+
+    # Archivos a eliminar
+    files_to_delete = [
+        output_file,
+        output_file.replace(".txt", "_resumen.txt"),
+        log_file,
+    ]
+
+    # Directorios a eliminar
+    dirs_to_delete = [chunks_dir, cache_dir]
+
+    # Eliminar archivos
+    for file_path in files_to_delete:
+        if os.path.isfile(file_path):
+            try:
+                os.remove(file_path)
+                stats["deleted_files"] += 1
+                if verbose:
+                    print(f"  ✓ Eliminado: {file_path}")
+                logger.info(f"Archivo eliminado: {file_path}")
+            except Exception as e:
+                stats["errors"].append(f"{file_path}: {e}")
+                if verbose:
+                    print(f"  ✗ Error al eliminar {file_path}: {e}")
+                logger.warning(f"Error al eliminar {file_path}: {e}")
+
+    # Eliminar directorios
+    for dir_path in dirs_to_delete:
+        if os.path.isdir(dir_path):
+            try:
+                shutil.rmtree(dir_path)
+                stats["deleted_dirs"] += 1
+                if verbose:
+                    print(f"  ✓ Eliminado: {dir_path}/")
+                logger.info(f"Directorio eliminado: {dir_path}")
+            except Exception as e:
+                stats["errors"].append(f"{dir_path}: {e}")
+                if verbose:
+                    print(f"  ✗ Error al eliminar {dir_path}: {e}")
+                logger.warning(f"Error al eliminar {dir_path}: {e}")
+
+    return stats
+
+
+def get_cleanable_items(
+    output_file: str = "transcripcion.txt",
+    chunks_dir: str = "chunks",
+    cache_dir: str = ".cache/transcriptions",
+    log_file: str = "transcriptor.log"
+) -> list[dict]:
+    """
+    Lista los archivos y directorios que se pueden limpiar.
+
+    Returns:
+        Lista de dicts con información de cada item
+    """
+    items = []
+
+    # Archivos
+    files_to_check = [
+        (output_file, "Transcripción"),
+        (output_file.replace(".txt", "_resumen.txt"), "Resumen"),
+        (log_file, "Archivo de logs"),
+    ]
+
+    for file_path, description in files_to_check:
+        if os.path.isfile(file_path):
+            size = os.path.getsize(file_path)
+            items.append({
+                "path": file_path,
+                "type": "file",
+                "description": description,
+                "size": size,
+                "size_str": f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / (1024*1024):.1f} MB"
+            })
+
+    # Directorios
+    dirs_to_check = [
+        (chunks_dir, "Fragmentos de audio"),
+        (cache_dir, "Caché de transcripciones"),
+    ]
+
+    for dir_path, description in dirs_to_check:
+        if os.path.isdir(dir_path):
+            # Contar archivos y tamaño total
+            total_size = 0
+            file_count = 0
+            for root, _, files in os.walk(dir_path):
+                for f in files:
+                    file_count += 1
+                    total_size += os.path.getsize(os.path.join(root, f))
+
+            items.append({
+                "path": dir_path,
+                "type": "directory",
+                "description": description,
+                "file_count": file_count,
+                "size": total_size,
+                "size_str": f"{total_size / 1024:.1f} KB" if total_size < 1024 * 1024 else f"{total_size / (1024*1024):.1f} MB"
+            })
+
+    return items
+
+
 def split_audio(file_path: str, chunk_length_ms: int, output_dir: str) -> list[str]:
     """
     Divide un archivo de audio en fragmentos de chunk_length_ms milisegundos.
@@ -334,10 +460,46 @@ def main():
         default=os.getenv("SUMMARY_MODEL", "gpt-4o-mini"),
         help="Modelo a usar para el resumen (gpt-4o-mini, gpt-4, gpt-4o, etc.)"
     )
+    parser.add_argument(
+        "--clean", "-c",
+        action="store_true",
+        help="Limpiar archivos de ejecuciones anteriores (transcripciones, caché, logs)"
+    )
     args = parser.parse_args()
+
+    # -----------------------------
+    # Modo limpieza (si se usa --clean sin archivo)
+    # -----------------------------
+    if args.clean and args.audio_path == "clean":
+        print("\n🧹 Limpiando archivos anteriores...")
+        items = get_cleanable_items(args.output, args.outdir)
+        if not items:
+            print("  No hay archivos para limpiar.")
+            sys.exit(0)
+
+        print("\nArchivos a eliminar:")
+        for item in items:
+            if item["type"] == "file":
+                print(f"  📄 {item['path']} ({item['size_str']}) - {item['description']}")
+            else:
+                print(f"  📁 {item['path']}/ ({item['file_count']} archivos, {item['size_str']}) - {item['description']}")
+
+        print()
+        stats = clean_outputs(args.output, args.outdir, verbose=True)
+        print(f"\n✓ Limpieza completada: {stats['deleted_files']} archivos, {stats['deleted_dirs']} directorios eliminados")
+        sys.exit(0)
 
     logger.info("Iniciando Transcriptor")
     logger.info(f"Archivo de entrada: {args.audio_path}")
+
+    # Si se usa --clean con archivo, limpiar primero
+    if args.clean:
+        print("\n🧹 Limpiando archivos anteriores...")
+        stats = clean_outputs(args.output, args.outdir, verbose=True)
+        if stats['deleted_files'] > 0 or stats['deleted_dirs'] > 0:
+            print("✓ Limpieza completada\n")
+        else:
+            print("  No había archivos para limpiar.\n")
 
     # -----------------------------
     # 2. Validación del archivo de entrada
